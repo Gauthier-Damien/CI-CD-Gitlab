@@ -1,5 +1,8 @@
 # GitLab CI/CD Pipeline
 # Stages: build → test → lint → deploy-staging → deploy-production
+#
+# Runner type: Shell runner on Debian Linux x64
+# GitLab instance: self-hosted (e.g. gitlab.localdomain)
 
 stages:
   - build
@@ -12,6 +15,11 @@ stages:
 variables:
   DOCKER_IMAGE: $CI_REGISTRY_IMAGE
   DOCKER_TAG: $CI_COMMIT_SHORT_SHA
+  # Shell runner: use the local Docker socket directly
+  DOCKER_HOST: unix:///var/run/docker.sock
+  # Allow push/pull to the self-hosted registry even without a valid TLS cert.
+  # On a properly configured instance (valid cert), you can remove this line.
+  DOCKER_TLS_VERIFY: "0"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STAGE: build
@@ -21,16 +29,12 @@ build:
   stage: build
   script:
     - python3 --version
-    - python3 -m venv .venv
+    - python3 -m venv --clear .venv
     - . .venv/bin/activate
-    - python -m pip install --quiet --upgrade pip
+    - python3 -m pip install --quiet --upgrade pip
     - echo "Installing production dependencies..."
     - pip install --quiet -r requirements.txt
     - echo "Build successful ✔"
-  artifacts:
-    paths:
-      - requirements.txt
-    expire_in: 1 hour
 
 build-docker:
   stage: build
@@ -42,9 +46,8 @@ build-docker:
     - docker tag  $DOCKER_IMAGE:$DOCKER_TAG $DOCKER_IMAGE:latest
     - docker push $DOCKER_IMAGE:$DOCKER_TAG
     - docker push $DOCKER_IMAGE:latest
-  only:
-    - main
-    - develop
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"'
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STAGE: test
@@ -53,9 +56,9 @@ build-docker:
 test:
   stage: test
   script:
-    - python3 -m venv .venv
+    - python3 -m venv --clear .venv
     - . .venv/bin/activate
-    - python -m pip install --quiet --upgrade pip
+    - python3 -m pip install --quiet --upgrade pip
     - pip install --quiet -r requirements-dev.txt
     - echo "Running tests with coverage..."
     - pytest tests/ --cov=app --cov-report=term-missing --cov-report=xml:coverage.xml -v
@@ -75,9 +78,9 @@ test:
 lint:
   stage: lint
   script:
-    - python3 -m venv .venv
+    - python3 -m venv --clear .venv
     - . .venv/bin/activate
-    - python -m pip install --quiet --upgrade pip
+    - python3 -m pip install --quiet --upgrade pip
     - pip install --quiet flake8
     - echo "Linting Python source files..."
     - flake8 app.py tests/ --max-line-length=120 --statistics
@@ -91,7 +94,7 @@ deploy-staging:
   stage: deploy-staging
   environment:
     name: staging
-    url: http://staging.example.com:5000
+    url: http://localhost:5000
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
@@ -107,8 +110,8 @@ deploy-staging:
         -e FLASK_ENV=staging \
         $DOCKER_IMAGE:$DOCKER_TAG
     - echo "Staging deployment complete ✔"
-  only:
-    - develop
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "develop"'
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STAGE: deploy-production
@@ -118,7 +121,7 @@ deploy-production:
   stage: deploy-production
   environment:
     name: production
-    url: http://example.com:5000
+    url: http://localhost:5001
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
@@ -130,10 +133,10 @@ deploy-production:
       docker run -d \
         --name app-production \
         --restart unless-stopped \
-        -p 5000:5000 \
+        -p 5001:5000 \
         -e FLASK_ENV=production \
         $DOCKER_IMAGE:$DOCKER_TAG
     - echo "Production deployment complete ✔"
-  when: manual
-  only:
-    - main
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
