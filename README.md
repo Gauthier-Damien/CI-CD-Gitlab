@@ -310,14 +310,26 @@ The `.gitlab-ci.yml` file defines the following stages:
 build ──► test ──► lint ──► deploy-staging ──► deploy-production
 ```
 
+> **Runner type:** this pipeline is designed for a **Shell runner**.  
+> Each Python job creates its own isolated virtual environment (`python3 -m venv .venv`) to avoid dependency on a system-wide `pip` and to prevent permission errors on system `site-packages`.  
+> Docker jobs (`build-docker`, `deploy-*`) require Docker to be installed on the runner machine and the runner user to be in the `docker` group.
+
 | Stage              | Job(s)             | Trigger           | Description |
 |--------------------|--------------------|-------------------|-------------|
-| **build**          | `build`            | every push        | Installs production deps |
+| **build**          | `build`            | every push        | Creates venv, installs production deps |
 | **build**          | `build-docker`     | `main` / `develop`| Builds & pushes Docker image to GitLab Registry |
-| **test**           | `test`             | every push        | Runs pytest with coverage report |
-| **lint**           | `lint`             | every push        | Checks code style with flake8 |
+| **test**           | `test`             | every push        | Runs pytest with coverage report (isolated venv) |
+| **lint**           | `lint`             | every push        | Checks code style with flake8 (isolated venv) |
 | **deploy-staging** | `deploy-staging`   | `develop` branch  | Deploys automatically to staging |
 | **deploy-production** | `deploy-production` | `main` branch  | **Manual** deploy to production |
+
+### Runner prerequisites
+
+| Requirement | Check |
+|-------------|-------|
+| Python 3 | `python3 --version` |
+| venv module | `python3 -m venv --help` — if missing: `sudo apt-get install -y python3-venv` (Debian/Ubuntu); included by default on macOS and Windows with Python 3 |
+| Docker | `docker --version` (required for `build-docker` and deploy jobs) |
 
 ### Required CI/CD variables
 

@@ -16,6 +16,16 @@ Ce document décrit la procédure Git à suivre pour déclencher le pipeline Git
 ## Pré-requis
 
 - Git installé sur votre machine (voir le [README](README.md) pour l'installation par plateforme)
+- Python 3 disponible sur la machine runner :
+  ```bash
+  python3 --version
+  python3 -m venv --help
+  ```
+  Si le module `venv` est absent (fréquent sur Debian/Ubuntu minimal) :
+  ```bash
+  sudo apt-get install -y python3-venv   # Debian / Ubuntu
+  ```
+  Sur macOS/Windows, `venv` est inclus avec Python 3 par défaut (voir [README](README.md)).
 - Accès en écriture au dépôt GitLab
 - Dépôt cloné localement :
 
