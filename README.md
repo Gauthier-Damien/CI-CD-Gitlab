@@ -18,9 +18,10 @@ A minimal **Python / Flask** web application with a full **GitLab CI/CD** pipeli
 4. [Run locally (without Docker)](#run-locally-without-docker)
 5. [Run with Docker](#run-with-docker)
 6. [Run with Docker Compose](#run-with-docker-compose)
-7. [CI/CD Pipeline](#cicd-pipeline)
-8. [Environment variables](#environment-variables)
-9. [Git workflow & triggering the pipeline](#git-workflow--triggering-the-pipeline)
+7. [Self-hosted GitLab setup (gitlab.localdomain)](#self-hosted-gitlab-setup-gitlablocaldomain)
+8. [CI/CD Pipeline](#cicd-pipeline)
+9. [Environment variables](#environment-variables)
+10. [Git workflow & triggering the pipeline](#git-workflow--triggering-the-pipeline)
 
 ---
 
@@ -302,6 +303,115 @@ docker compose down
 
 ---
 
+## Self-hosted GitLab setup (gitlab.localdomain)
+
+This section covers everything you need to do **once** on the Debian host machine to make the pipeline work against a self-hosted GitLab instance (e.g. `http://gitlab.localdomain`).
+
+### 1. Enable the Container Registry on your GitLab instance
+
+By default the Container Registry is not enabled. Edit `/etc/gitlab/gitlab.rb` on the GitLab server:
+
+```ruby
+registry_external_url 'http://gitlab.localdomain:5050'
+gitlab_rails['registry_enabled'] = true
+```
+
+Then reconfigure:
+
+```bash
+sudo gitlab-ctl reconfigure
+sudo gitlab-ctl restart
+```
+
+Verify: **GitLab → your project → Packages & Registries → Container Registry** should now be accessible.
+
+### 2. Allow Docker to use the insecure local registry
+
+Because the local registry is served over plain HTTP (no valid TLS certificate), the Docker daemon on the **runner host** must be told to trust it.
+
+Create or edit `/etc/docker/daemon.json`:
+
+```json
+{
+  "insecure-registries": ["gitlab.localdomain:5050"]
+}
+```
+
+Reload Docker:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
+
+Verify:
+
+```bash
+docker info | grep -A5 "Insecure Registries"
+```
+
+### 3. Install and register the GitLab Shell Runner
+
+```bash
+# Add the GitLab Runner repository
+curl -L https://packages.gitlab.com/install/repositories/runner/gitlab-runner/script.deb.sh | sudo bash
+
+# Install the runner
+sudo apt-get install -y gitlab-runner
+
+# Add the runner user to the docker group so it can run docker commands
+sudo usermod -aG docker gitlab-runner
+
+# Log out & back in (or run newgrp docker in the current shell) for the group change to take effect
+```
+
+Register the runner (**shell** executor):
+
+```bash
+sudo gitlab-runner register \
+  --url "http://gitlab.localdomain" \
+  --registration-token "<YOUR_REGISTRATION_TOKEN>" \
+  --executor "shell" \
+  --description "debian-shell-runner" \
+  --tag-list "" \
+  --run-untagged="true" \
+  --locked="false"
+```
+
+> The registration token is found at **GitLab → your project → Settings → CI/CD → Runners → Registration token**.
+
+Start the runner:
+
+```bash
+sudo systemctl enable --now gitlab-runner
+sudo gitlab-runner status
+```
+
+### 4. Verify the runner can reach Docker
+
+```bash
+# Run as the gitlab-runner user
+sudo -u gitlab-runner docker info
+sudo -u gitlab-runner docker login gitlab.localdomain:5050 \
+  -u <your-gitlab-username> -p <your-personal-access-token>
+```
+
+### 5. Python prerequisites on the runner host
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python3 python3-venv python3-pip
+```
+
+Verify:
+
+```bash
+python3 --version
+python3 -m venv --help
+```
+
+---
+
 ## CI/CD Pipeline
 
 The `.gitlab-ci.yml` file defines the following stages:
@@ -310,9 +420,9 @@ The `.gitlab-ci.yml` file defines the following stages:
 build ──► test ──► lint ──► deploy-staging ──► deploy-production
 ```
 
-> **Runner type:** this pipeline is designed for a **Shell runner**.  
-> Each Python job creates its own isolated virtual environment (`python3 -m venv .venv`) to avoid dependency on a system-wide `pip` and to prevent permission errors on system `site-packages`.  
-> Docker jobs (`build-docker`, `deploy-*`) require Docker to be installed on the runner machine and the runner user to be in the `docker` group.
+> **Runner type:** this pipeline is designed for a **Shell runner** on a Debian Linux x64 host.  
+> Each Python job creates its own isolated virtual environment (`python3 -m venv --clear .venv`) to avoid dependency on a system-wide `pip` and to prevent permission errors on system `site-packages`.  
+> Docker jobs (`build-docker`, `deploy-*`) require Docker to be installed on the runner machine and the runner user to be in the `docker` group (see [Self-hosted GitLab setup](#self-hosted-gitlab-setup-gitlablocaldomain)).
 
 | Stage              | Job(s)             | Trigger           | Description |
 |--------------------|--------------------|-------------------|-------------|
@@ -320,26 +430,30 @@ build ──► test ──► lint ──► deploy-staging ──► deploy-pr
 | **build**          | `build-docker`     | `main` / `develop`| Builds & pushes Docker image to GitLab Registry |
 | **test**           | `test`             | every push        | Runs pytest with coverage report (isolated venv) |
 | **lint**           | `lint`             | every push        | Checks code style with flake8 (isolated venv) |
-| **deploy-staging** | `deploy-staging`   | `develop` branch  | Deploys automatically to staging |
-| **deploy-production** | `deploy-production` | `main` branch  | **Manual** deploy to production |
+| **deploy-staging** | `deploy-staging`   | `develop` branch  | Deploys automatically to staging (`localhost:5000`) |
+| **deploy-production** | `deploy-production` | `main` branch  | **Manual** deploy to production (`localhost:5001`) |
 
 ### Runner prerequisites
 
 | Requirement | Check |
 |-------------|-------|
 | Python 3 | `python3 --version` |
-| venv module | `python3 -m venv --help` — if missing: `sudo apt-get install -y python3-venv` (Debian/Ubuntu); included by default on macOS and Windows with Python 3 |
+| venv module | `python3 -m venv --help` — if missing: `sudo apt-get install -y python3-venv` |
 | Docker | `docker --version` (required for `build-docker` and deploy jobs) |
+| Runner in docker group | `groups gitlab-runner | grep docker` |
 
 ### Required CI/CD variables
 
-Configure these in **GitLab → Settings → CI/CD → Variables**:
+`CI_REGISTRY_USER`, `CI_REGISTRY_PASSWORD`, and `CI_REGISTRY` are **automatically provided** by GitLab when the Container Registry is enabled — no manual configuration is needed.
 
-| Variable | Description |
-|----------|-------------|
-| `CI_REGISTRY_USER` | GitLab Registry username (auto-provided by GitLab) |
-| `CI_REGISTRY_PASSWORD` | GitLab Registry password / token (auto-provided) |
-| `CI_REGISTRY` | Registry URL (auto-provided by GitLab) |
+### Deployed ports
+
+Both staging and production run on the same host machine on **different ports** to avoid conflicts:
+
+| Environment | Host port | Container port |
+|-------------|-----------|----------------|
+| staging     | 5000      | 5000           |
+| production  | 5001      | 5000           |
 
 ### Run tests locally
 
