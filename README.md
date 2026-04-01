@@ -8,6 +8,8 @@ A minimal **Python / Flask** web application with a full **GitLab CI/CD** pipeli
 
 1. [Project structure](#project-structure)
 2. [Clone the repository](#clone-the-repository)
+   - [Push to a new GitLab repository](#push-to-a-new-gitlab-repository)
+   - [Push to an existing GitLab repository](#push-to-an-existing-gitlab-repository)
 3. [Install dependencies](#install-dependencies)
    - [Windows](#windows)
    - [Debian](#debian)
@@ -18,6 +20,7 @@ A minimal **Python / Flask** web application with a full **GitLab CI/CD** pipeli
 6. [Run with Docker Compose](#run-with-docker-compose)
 7. [CI/CD Pipeline](#cicd-pipeline)
 8. [Environment variables](#environment-variables)
+9. [Git workflow & triggering the pipeline](#git-workflow--triggering-the-pipeline)
 
 ---
 
@@ -45,6 +48,52 @@ A minimal **Python / Flask** web application with a full **GitLab CI/CD** pipeli
 git clone https://gitlab.com/<your-namespace>/CI-CD-Gitlab.git
 cd CI-CD-Gitlab
 ```
+
+---
+
+### Push to a new GitLab repository
+
+Use this when you want to host this project in a brand-new GitLab repository.
+
+1. **Create an empty repository on GitLab** (no README, no `.gitignore`): **GitLab → New project → Create blank project**.
+
+2. **Configure the remote and push:**
+
+```bash
+# Remove the original remote (if cloned from another source)
+git remote remove origin
+
+# Add your new GitLab repository as the remote
+git remote add origin https://gitlab.com/<your-namespace>/<your-repo>.git
+
+# Push all branches and tags
+git push -u origin --all
+git push -u origin --tags
+```
+
+---
+
+### Push to an existing GitLab repository
+
+Use this when you want to add this project's content on top of an existing GitLab repository.
+
+```bash
+# Add the existing GitLab repository as a remote (choose a name other than "origin" if already taken)
+git remote add gitlab https://gitlab.com/<your-namespace>/<existing-repo>.git
+
+# Fetch the remote history to avoid divergent-history conflicts
+git fetch gitlab
+
+# Push your current branch (adjust the branch name as needed)
+git push gitlab main
+```
+
+> If the remote already has commits you don't have locally, rebase or merge first:
+>
+> ```bash
+> git pull --rebase gitlab main
+> git push gitlab main
+> ```
 
 ---
 
@@ -301,3 +350,9 @@ flake8 app.py tests/ --max-line-length=120
 |---------------|--------------|-------------|
 | `FLASK_ENV`   | `production` | Flask environment (`development`, `staging`, `production`) |
 | `PORT`        | `5000`       | Port the app listens on |
+
+---
+
+## Git workflow & triggering the pipeline
+
+For the full Git workflow — including branch creation, conventional commits, and how to trigger the pipeline with an allow-empty push — see **[GIT_WORKFLOW.md](GIT_WORKFLOW.md)**.
