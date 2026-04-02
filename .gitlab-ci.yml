@@ -1,8 +1,11 @@
 # GitLab CI/CD Pipeline
 # Stages: build → test → lint → deploy-staging → deploy-production
 #
-# Runner type: Shell runner on Debian Linux x64
-# GitLab instance: self-hosted (e.g. gitlab.localdomain)
+# Runner type: Docker runner on GitLab.com shared runners
+# GitLab instance: gitlab.com
+
+default:
+  image: python:3.11
 
 stages:
   - build
@@ -15,11 +18,6 @@ stages:
 variables:
   DOCKER_IMAGE: $CI_REGISTRY_IMAGE
   DOCKER_TAG: $CI_COMMIT_SHORT_SHA
-  # Shell runner: use the local Docker socket directly
-  DOCKER_HOST: unix:///var/run/docker.sock
-  # Allow push/pull to the self-hosted registry even without a valid TLS cert.
-  # On a properly configured instance (valid cert), you can remove this line.
-  DOCKER_TLS_VERIFY: "0"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STAGE: build
@@ -38,6 +36,11 @@ build:
 
 build-docker:
   stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
   before_script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   script:
@@ -92,6 +95,11 @@ lint:
 
 deploy-staging:
   stage: deploy-staging
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
   environment:
     name: staging
     url: http://localhost:5000
@@ -119,6 +127,11 @@ deploy-staging:
 
 deploy-production:
   stage: deploy-production
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
   environment:
     name: production
     url: http://localhost:5001
