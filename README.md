@@ -481,4 +481,4 @@ flake8 app.py tests/ --max-line-length=120
 
 ## Git workflow & triggering the pipeline
 
-For the full Git workflow — including branch creation, conventional commits, and how to trigger the pipeline with an allow-empty push — see **[GIT_WORKFLOW.md](GIT_WORKFLOW.md)**.
+For the full Git workflow — including SSH key setup, initial Git configuration, essential commands (fetch, pull, push…), branch creation, conventional commits, and how to trigger the pipeline with an allow-empty push — see **[GIT_WORKFLOW.md](GIT_WORKFLOW.md)**.
